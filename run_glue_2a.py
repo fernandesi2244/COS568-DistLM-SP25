@@ -23,6 +23,8 @@ import logging
 import os
 import random
 import time
+import json
+from datetime import datetime
 
 import numpy as np
 import torch
@@ -79,6 +81,9 @@ def train(args, train_dataset, model, tokenizer):
         train_sampler = RandomSampler(train_dataset)
         
     train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size)
+    
+    # Initialize loss logging
+    loss_log = []
 
     if args.max_steps > 0:
         t_total = args.max_steps
@@ -152,11 +157,23 @@ def train(args, train_dataset, model, tokenizer):
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 
-            tr_loss += loss.item()
+            # Log the loss for every step
+            current_loss = loss.item()
+            tr_loss += current_loss
+            
+            # Add to loss log with step information
+            loss_log.append({
+                'epoch': epoch,
+                'step': step,
+                'global_step': global_step,
+                'loss': current_loss,
+                'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            })
+            
             if (step + 1) % args.gradient_accumulation_steps == 0:
                 # Print out the loss for the first 5 steps
                 if step < 5:
-                    print('Epoch: {}, Step: {}, Loss: {}'.format(epoch, step, loss.item()))
+                    print('Epoch: {}, Step: {}, Loss: {}'.format(epoch, step, current_loss))
                 
                 # Implement gradient synchronization with gather and scatter
                 if args.local_rank != -1:
@@ -233,6 +250,17 @@ def train(args, train_dataset, model, tokenizer):
     # Print average epoch time
     avg_epoch_time = sum(epoch_times) / len(epoch_times)
     logger.info(f"Average epoch time: {avg_epoch_time:.4f} seconds")
+    
+    # Save the loss log to a file
+    if args.local_rank != -1:
+        loss_log_file = os.path.join(args.output_dir, f"loss_log_rank_{args.local_rank}.json")
+    else:
+        loss_log_file = os.path.join(args.output_dir, "loss_log.json")
+        
+    os.makedirs(args.output_dir, exist_ok=True)
+    with open(loss_log_file, 'w') as f:
+        json.dump(loss_log, f, indent=2)
+    logger.info(f"Loss log saved to {loss_log_file}")
 
     return global_step, tr_loss / global_step
 
