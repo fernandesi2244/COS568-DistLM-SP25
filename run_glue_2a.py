@@ -84,6 +84,7 @@ def train(args, train_dataset, model, tokenizer):
     
     # Initialize loss logging
     loss_log = []
+    total_loss = 0.0
 
     if args.max_steps > 0:
         t_total = args.max_steps
@@ -160,20 +161,24 @@ def train(args, train_dataset, model, tokenizer):
             # Log the loss for every step
             current_loss = loss.item()
             tr_loss += current_loss
+            total_loss += current_loss
             
-            # Add to loss log with step information
+            # Add to loss log with step information and cumulative loss
             loss_log.append({
                 'epoch': epoch,
                 'step': step,
                 'global_step': global_step,
-                'loss': current_loss,
+                'step_loss': current_loss,
+                'total_loss': total_loss,
+                'avg_loss': total_loss / (global_step + 1) if global_step > 0 else total_loss,
                 'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             })
             
             if (step + 1) % args.gradient_accumulation_steps == 0:
                 # Print out the loss for the first 5 steps
                 if step < 5:
-                    print('Epoch: {}, Step: {}, Loss: {}'.format(epoch, step, current_loss))
+                    print('Epoch: {}, Step: {}, Step Loss: {}, Total Loss: {}'.format(
+                        epoch, step, current_loss, total_loss))
                 
                 # Implement gradient synchronization with gather and scatter
                 if args.local_rank != -1:
@@ -185,19 +190,16 @@ def train(args, train_dataset, model, tokenizer):
                             gather_list = [torch.zeros_like(param.grad) for _ in range(args.world_size)]
                             
                             # Gather gradients from all processes to process 0
-                            # print('Sending gradient:', param.grad)
                             torch.distributed.gather(param.grad, gather_list if args.local_rank == 0 else None, dst=0)
                             
                             # Process 0 computes the average
                             if args.local_rank == 0:
-                                # print('Gathered gradients:', gather_list)
                                 # Element-wise sum of all gradients
                                 avg_grad = torch.zeros_like(param.grad)
                                 for grad in gather_list:
                                     avg_grad += grad
                                 # Divide by world_size to get the average
                                 avg_grad /= args.world_size
-                                # print('Sending average gradient:', avg_grad)
                                 # Prepare list for scattering
                                 scatter_list = [avg_grad for _ in range(args.world_size)]
                             else:
@@ -205,17 +207,9 @@ def train(args, train_dataset, model, tokenizer):
                             
                             # Scatter the average gradient back to all processes
                             torch.distributed.scatter(param.grad, scatter_list if args.local_rank == 0 else None, src=0)
-                            # print('Received gradient:', param.grad)
                     
                     # Synchronize all processes after gradient update
                     torch.distributed.barrier()
-
-                    # After synchronization, on each node
-                    for name, param in model.named_parameters():
-                        if param.requires_grad and param.grad is not None:
-                            # Print sum of gradients to check if they're identical across nodes
-                            grad_sum = param.grad.sum().item()
-                            print(f"Rank {args.local_rank}, Parameter {name}, Gradient sum: {grad_sum}")
                 
                 # Perform optimizer step
                 optimizer.step()
