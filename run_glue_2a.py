@@ -480,6 +480,8 @@ def main():
             rank=args.local_rank
         )
         logger.info(f"Initialized process group: rank={args.local_rank}, world_size={args.world_size}")
+    
+    print('Passed distributed setup')
 
     # set up (distributed) training
     args.device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
