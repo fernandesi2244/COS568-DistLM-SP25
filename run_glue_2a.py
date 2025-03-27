@@ -185,19 +185,19 @@ def train(args, train_dataset, model, tokenizer):
                             gather_list = [torch.zeros_like(param.grad) for _ in range(args.world_size)]
                             
                             # Gather gradients from all processes to process 0
-                            print('Sending gradient:', param.grad)
+                            # print('Sending gradient:', param.grad)
                             torch.distributed.gather(param.grad, gather_list if args.local_rank == 0 else None, dst=0)
                             
                             # Process 0 computes the average
                             if args.local_rank == 0:
-                                print('Gathered gradients:', gather_list)
+                                # print('Gathered gradients:', gather_list)
                                 # Element-wise sum of all gradients
                                 avg_grad = torch.zeros_like(param.grad)
                                 for grad in gather_list:
                                     avg_grad += grad
                                 # Divide by world_size to get the average
                                 avg_grad /= args.world_size
-                                print('Sending average gradient:', avg_grad)
+                                # print('Sending average gradient:', avg_grad)
                                 # Prepare list for scattering
                                 scatter_list = [avg_grad for _ in range(args.world_size)]
                             else:
@@ -205,7 +205,7 @@ def train(args, train_dataset, model, tokenizer):
                             
                             # Scatter the average gradient back to all processes
                             torch.distributed.scatter(param.grad, scatter_list if args.local_rank == 0 else None, src=0)
-                            print('Received gradient:', param.grad)
+                            # print('Received gradient:', param.grad)
                     
                     # Synchronize all processes after gradient update
                     torch.distributed.barrier()
