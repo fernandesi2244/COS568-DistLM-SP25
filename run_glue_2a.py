@@ -185,16 +185,19 @@ def train(args, train_dataset, model, tokenizer):
                             gather_list = [torch.zeros_like(param.grad) for _ in range(args.world_size)]
                             
                             # Gather gradients from all processes to process 0
+                            print('Sending gradient:', param.grad)
                             torch.distributed.gather(param.grad, gather_list if args.local_rank == 0 else None, dst=0)
                             
                             # Process 0 computes the average
                             if args.local_rank == 0:
+                                print('Gathered gradients:', gather_list)
                                 # Element-wise sum of all gradients
                                 avg_grad = torch.zeros_like(param.grad)
                                 for grad in gather_list:
                                     avg_grad += grad
                                 # Divide by world_size to get the average
                                 avg_grad /= args.world_size
+                                print('Sending average gradient:', avg_grad)
                                 # Prepare list for scattering
                                 scatter_list = [avg_grad for _ in range(args.world_size)]
                             else:
@@ -202,9 +205,17 @@ def train(args, train_dataset, model, tokenizer):
                             
                             # Scatter the average gradient back to all processes
                             torch.distributed.scatter(param.grad, scatter_list if args.local_rank == 0 else None, src=0)
+                            print('Received gradient:', param.grad)
                     
                     # Synchronize all processes after gradient update
                     torch.distributed.barrier()
+
+                    # After synchronization, on each node
+                    for name, param in model.named_parameters():
+                        if param.requires_grad and param.grad is not None:
+                            # Print sum of gradients to check if they're identical across nodes
+                            grad_sum = param.grad.sum().item()
+                            print(f"Rank {args.local_rank}, Parameter {name}, Gradient sum: {grad_sum}")
                 
                 # Perform optimizer step
                 optimizer.step()
@@ -319,12 +330,13 @@ def evaluate(args, model, tokenizer, prefix=""):
         result = compute_metrics(eval_task, preds, out_label_ids)
         results.update(result)
 
-        output_eval_file = os.path.join(eval_output_dir, "eval_results.txt")
-        with open(output_eval_file, "w") as writer:
-            logger.info("***** Eval results {} *****".format(prefix))
-            for key in sorted(result.keys()):
-                logger.info("  %s = %s", key, str(result[key]))
-                writer.write("%s = %s\n" % (key, str(result[key])))
+        if args.local_rank in [-1, 0]:
+            output_eval_file = os.path.join(eval_output_dir, "eval_results.txt")
+            with open(output_eval_file, "w") as writer:
+                logger.info("***** Eval results {} *****".format(prefix))
+                for key in sorted(result.keys()):
+                    logger.info("  %s = %s", key, str(result[key]))
+                    writer.write("%s = %s\n" % (key, str(result[key])))
 
     return results
 
@@ -465,6 +477,9 @@ def main():
 
     if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train and not args.overwrite_output_dir:
         raise ValueError("Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(args.output_dir))
+
+    print('Local rank:', args.local_rank)
+    print('World size:', args.world_size)
 
     # Initialize the distributed environment
     if args.local_rank != -1:
