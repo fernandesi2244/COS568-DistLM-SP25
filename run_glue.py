@@ -140,6 +140,9 @@ def train(args, train_dataset, model, tokenizer):
 
             tr_loss += loss.item()
             if (step + 1) % args.gradient_accumulation_steps == 0:
+                # Print out the loss for the first 5 steps
+                if step < 5:
+                    print('Epoch: {}, Step: {}, Loss: {}'.format(epoch, step, loss.item()))
                 ##################################################
                 # TODO(cos568): perform a single optimization step (parameter update) by invoking the optimizer (expect one line of code)
                 optimizer.step()                
