@@ -550,6 +550,12 @@ def main():
     # Evaluation
     if args.do_eval and (args.local_rank == -1 or args.local_rank == 0):  # Only evaluate on master process
         evaluate(args, model, tokenizer, prefix="final")
+    
+    # Clean up the distributed environment
+    if args.local_rank != -1:
+        logger.info("Destroying process group...")
+        torch.distributed.destroy_process_group()
+        logger.info("Process group destroyed")
 
 if __name__ == "__main__":
     main()
