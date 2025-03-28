@@ -180,33 +180,15 @@ def train(args, train_dataset, model, tokenizer):
                     print('Epoch: {}, Step: {}, Step Loss: {}, Total Loss: {}'.format(
                         epoch, step, current_loss, total_loss))
                 
-                # Implement gradient synchronization with gather and scatter
+                # Implement gradient synchronization with all_reduce
                 if args.local_rank != -1:
-                    # Gradient synchronization logic
-                    # Gather, average, and scatter gradients 
                     for param in model.parameters():
                         if param.requires_grad and param.grad is not None:
-                            # Create tensor list to hold gradients from all processes
-                            gather_list = [torch.zeros_like(param.grad) for _ in range(args.world_size)]
+                            # Use all_reduce to sum up gradients from all processes
+                            torch.distributed.all_reduce(param.grad, op=torch.distributed.ReduceOp.SUM)
                             
-                            # Gather gradients from all processes to process 0
-                            torch.distributed.gather(param.grad, gather_list if args.local_rank == 0 else None, dst=0)
-                            
-                            # Process 0 computes the average
-                            if args.local_rank == 0:
-                                # Element-wise sum of all gradients
-                                avg_grad = torch.zeros_like(param.grad)
-                                for grad in gather_list:
-                                    avg_grad += grad
-                                # Divide by world_size to get the average
-                                avg_grad /= args.world_size
-                                # Prepare list for scattering
-                                scatter_list = [avg_grad for _ in range(args.world_size)]
-                            else:
-                                scatter_list = None
-                            
-                            # Scatter the average gradient back to all processes
-                            torch.distributed.scatter(param.grad, scatter_list if args.local_rank == 0 else None, src=0)
+                            # Divide by world_size to get the average
+                            param.grad.div_(args.world_size)
                     
                     # Synchronize all processes after gradient update
                     torch.distributed.barrier()
