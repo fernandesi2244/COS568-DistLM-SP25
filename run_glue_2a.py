@@ -247,10 +247,13 @@ def train(args, train_dataset, model, tokenizer):
         # Call evaluate() after every epoch
         evaluate(args, model, tokenizer, prefix=str(epoch))
     
-    # Print average iteration time (excluding the first iteration)
-    if epoch == 1:  # If we've completed at least one epoch
-        avg_iteration_time = sum(iteration_times) / len(iteration_times)
-        logger.info(f"Average iteration time (excluding first iteration): {avg_iteration_time:.4f} seconds")
+    # Print average iteration time
+    avg_iteration_time = sum(iteration_times) / len(iteration_times)
+    logger.info(f"Average iteration time (excluding first iteration): {avg_iteration_time:.4f} seconds")
+
+    # Also just log each iteration time
+    for i, time_val in enumerate(iteration_times):
+        logger.info(f"Iteration {i + 1} time: {time_val:.4f} seconds")
     
     # Print average epoch time
     avg_epoch_time = sum(epoch_times) / len(epoch_times)
