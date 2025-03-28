@@ -152,11 +152,9 @@ def train(args, train_dataset, model, tokenizer):
             if args.fp16:
                 with amp.scale_loss(loss, optimizer) as scaled_loss:
                     scaled_loss.backward()
-                torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), args.max_grad_norm)
             else:
                 # Backward pass
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 
             # Log the loss for every step
             current_loss = loss.item()
@@ -199,6 +197,11 @@ def train(args, train_dataset, model, tokenizer):
                     
                     # Synchronize all processes after gradient update
                     torch.distributed.barrier()
+                
+                if args.fp16:
+                    torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), args.max_grad_norm)
+                else:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
                 
                 # Perform optimizer step
                 optimizer.step()
