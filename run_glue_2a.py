@@ -279,8 +279,14 @@ def evaluate(args, model, tokenizer, prefix=""):
     for eval_task, eval_output_dir in zip(eval_task_names, eval_outputs_dirs):
         eval_dataset = load_and_cache_examples(args, eval_task, tokenizer, evaluate=True)
 
-        if not os.path.exists(eval_output_dir) and args.local_rank in [-1, 0]:
-            os.makedirs(eval_output_dir)
+        # Create node-specific output directory
+        if args.local_rank != -1:
+            node_output_dir = os.path.join(eval_output_dir, f"rank_{args.local_rank}")
+        else:
+            node_output_dir = eval_output_dir
+            
+        if not os.path.exists(node_output_dir):
+            os.makedirs(node_output_dir)
 
         args.eval_batch_size = args.per_device_eval_batch_size
         # Note that DistributedSampler samples randomly
@@ -288,7 +294,7 @@ def evaluate(args, model, tokenizer, prefix=""):
         eval_dataloader = DataLoader(eval_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size)
 
         # Eval!
-        logger.info("***** Running evaluation {} *****".format(prefix))
+        logger.info("***** Running evaluation {} for rank {} *****".format(prefix, args.local_rank))
         logger.info("  Num examples = %d", len(eval_dataset))
         logger.info("  Batch size = %d", args.eval_batch_size)
         eval_loss = 0.0
@@ -324,13 +330,13 @@ def evaluate(args, model, tokenizer, prefix=""):
         result = compute_metrics(eval_task, preds, out_label_ids)
         results.update(result)
 
-        if args.local_rank in [-1, 0]:
-            output_eval_file = os.path.join(eval_output_dir, "eval_results.txt")
-            with open(output_eval_file, "w") as writer:
-                logger.info("***** Eval results {} *****".format(prefix))
-                for key in sorted(result.keys()):
-                    logger.info("  %s = %s", key, str(result[key]))
-                    writer.write("%s = %s\n" % (key, str(result[key])))
+        # Save to node-specific output file
+        output_eval_file = os.path.join(node_output_dir, f"eval_results_{prefix}.txt")
+        with open(output_eval_file, "w") as writer:
+            logger.info("***** Eval results {} for rank {} *****".format(prefix, args.local_rank))
+            for key in sorted(result.keys()):
+                logger.info("  %s = %s", key, str(result[key]))
+                writer.write("%s = %s\n" % (key, str(result[key])))
 
     return results
 
@@ -472,9 +478,6 @@ def main():
     if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train and not args.overwrite_output_dir:
         raise ValueError("Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(args.output_dir))
 
-    print('Local rank:', args.local_rank)
-    print('World size:', args.world_size)
-
     # Initialize the distributed environment
     if args.local_rank != -1:
         if args.master_ip is None or args.master_port is None:
@@ -489,8 +492,6 @@ def main():
             rank=args.local_rank
         )
         logger.info(f"Initialized process group: rank={args.local_rank}, world_size={args.world_size}")
-    
-    print('Passed distributed setup')
 
     # set up (distributed) training
     args.device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
@@ -558,9 +559,14 @@ def main():
             # Good practice: save your training arguments together with the trained model
             torch.save(args, os.path.join(args.output_dir, 'training_args.bin'))
 
-    # Evaluation
-    if args.do_eval and (args.local_rank == -1 or args.local_rank == 0):  # Only evaluate on master process
+    # Evaluation - all nodes evaluate
+    if args.do_eval:
+        # Make sure data is loaded properly on all nodes
+        if args.local_rank != -1:
+            torch.distributed.barrier()
         evaluate(args, model, tokenizer, prefix="final")
+        if args.local_rank != -1:
+            torch.distributed.barrier()
     
     # Clean up the distributed environment
     if args.local_rank != -1:

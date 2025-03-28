@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Plot loss curves from the distributed training logs.
 Usage: python plot_loss_curves.py --input_dir /path/to/output_dir
