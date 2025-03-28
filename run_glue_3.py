@@ -28,6 +28,7 @@ from datetime import datetime
 
 import numpy as np
 import torch
+import torch.nn as nn
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
                               TensorDataset)
 from torch.utils.data.distributed import DistributedSampler
@@ -179,19 +180,6 @@ def train(args, train_dataset, model, tokenizer):
                 if step < 5:
                     print('Epoch: {}, Step: {}, Step Loss: {}, Total Loss: {}'.format(
                         epoch, step, current_loss, total_loss))
-                
-                # Implement gradient synchronization with all_reduce
-                if args.local_rank != -1:
-                    for param in model.parameters():
-                        if param.requires_grad and param.grad is not None:
-                            # Use all_reduce to sum up gradients from all processes
-                            torch.distributed.all_reduce(param.grad, op=torch.distributed.ReduceOp.SUM)
-                            
-                            # Divide by world_size to get the average
-                            param.grad.div_(args.world_size)
-                    
-                    # Synchronize all processes after gradient update
-                    torch.distributed.barrier()
                 
                 # Perform optimizer step
                 optimizer.step()
@@ -523,6 +511,15 @@ def main():
         torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
 
     model.to(args.device)
+
+    # Wrap model with DistributedDataParallel for distributed training
+    if args.local_rank != -1:
+        model = torch.nn.parallel.DistributedDataParallel(
+            model, 
+            device_ids=[args.local_rank] if torch.cuda.is_available() else None,
+            output_device=args.local_rank if torch.cuda.is_available() else None
+        )
+        logger.info(f"Model wrapped with DistributedDataParallel for rank {args.local_rank}")
 
     logger.info("Training/evaluation parameters %s", args)
 
