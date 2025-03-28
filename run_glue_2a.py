@@ -270,6 +270,10 @@ def train(args, train_dataset, model, tokenizer):
         json.dump(loss_log, f, indent=2)
     logger.info(f"Loss log saved to {loss_log_file}")
 
+    # Also just log all the total losses
+    for i, entry in enumerate(loss_log):
+        logger.info(f"Epoch {entry['epoch']}, Step {entry['step']}, Global Step {entry['global_step']}, Total Loss: {entry['total_loss']}")
+
     return global_step, tr_loss / global_step
 
 
