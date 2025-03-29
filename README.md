@@ -48,7 +48,7 @@ Here is a command you can use to run `run_glue.py` (remember to rename the `run_
 export GLUE_DIR=/proj/cos568proj2-PG0/glue_data
 export TASK_NAME=RTE
 
-python3 run_glue.py \
+python3 run_glue_2b_mod.py \
   --model_type bert \
   --model_name_or_path bert-base-cased \
   --task_name $TASK_NAME \
@@ -56,11 +56,12 @@ python3 run_glue.py \
   --do_eval \
   --data_dir $GLUE_DIR/$TASK_NAME \
   --max_seq_length 128 \
-  --per_device_train_batch_size 64 \
+  --per_device_train_batch_size 16 \
   --learning_rate 2e-5 \
-  --num_train_epochs 3 \
+  --num_train_epochs 1 \
   --output_dir /tmp/$TASK_NAME/ \
-  --overwrite_output_dir
+  --overwrite_output_dir \
+  --master_ip $ip_address --master_port $port --world_size 4 --local_rank $rank
 ```
 
 **Task 1:** Load the pretrained BERT-base model from Huggingface and fill in the standard training loop of a minibatch – forward pass (already implemented), backward pass, loss computation (already implemented), and parameter updates (via optimizer step). Record the loss values of the first five minibatches by printing the loss value after every iteration. Afterward, run training for 3 epochs (an epoch is a complete pass over a dataset -- when doing fine-tuning, we typically only need a small number of epochs) with batch size 64 and the default hyperparameters. All required code changes are marked with `TODO(cos568)` comments. 
